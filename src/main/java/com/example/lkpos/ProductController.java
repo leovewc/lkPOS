@@ -222,6 +222,7 @@ public class ProductController {
         public List<String> barcodes;
         public String barcode;
         public String imageUrl;
+        public double costPrice;
 
         // 🌟 新增的五个高价值商业字段
         public String brand;
@@ -247,8 +248,8 @@ public class ProductController {
 
         // 2. 插入商品主表 (包含图片)
         // 🌟 升级：插入商品时带上新字段
-        @Insert("INSERT INTO products (name, price, image_url, brand, specification, manufacturer, category, note) " +
-                "VALUES (#{name}, #{price}, #{imageUrl}, #{brand}, #{specification}, #{manufacturer}, #{category}, #{note})")
+        @Insert("INSERT INTO products (name, price, cost_price, image_url, brand, specification, manufacturer, category, note) " +
+                "VALUES (#{name}, #{price}, #{costPrice}, #{imageUrl}, #{brand}, #{specification}, #{manufacturer}, #{category}, #{note})")
         @Options(useGeneratedKeys = true, keyProperty = "id")
         void insertProduct(Product product);
 
@@ -258,13 +259,14 @@ public class ProductController {
 
         // 4. 查询商品列表 (映射图片和条码集合)
         // 🌟 升级：查询列表时把新字段一起拉出来
-        @Select("SELECT id, name, price, image_url as imageUrl, brand, specification, manufacturer, category, note FROM products ORDER BY id DESC")
+        @Select("SELECT id, name, price, cost_price as costPrice, image_url as imageUrl, brand, specification, manufacturer, category, note FROM products ORDER BY id DESC")
         @Results({
                 @Result(property = "id", column = "id"),
                 @Result(property = "name", column = "name"),
                 @Result(property = "price", column = "price"),
                 @Result(property = "imageUrl", column = "imageUrl"),
                 @Result(property = "brand", column = "brand"),
+                @Result(property = "costPrice", column = "costPrice"),
                 @Result(property = "specification", column = "specification"),
                 @Result(property = "manufacturer", column = "manufacturer"),
                 @Result(property = "category", column = "category"),
@@ -279,7 +281,7 @@ public class ProductController {
         @Delete("DELETE FROM products WHERE id = #{id}")
         void deleteProduct(Integer id);
 
-        @Update("UPDATE products SET name = #{name}, price = #{price} WHERE id = #{id}")
+        @Update("UPDATE products SET name = #{name}, price = #{price} WHERE id = #{id}, cost_price = #{costPrice} WHERE id = #{id}")
         void updateProduct(Product product);
 
         // 5. 销量统计报表

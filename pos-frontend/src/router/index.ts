@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Cashier from '@/views/Cashier.vue'
 import AdminAddProduct from '@/views/AdminAddProduct.vue'
 import AdminOrders from '@/views/AdminOrders.vue'
+import Dashboard from "@/views/Dashboard.vue";
 
 const router = createRouter({
     history: createWebHistory(),
@@ -20,6 +21,11 @@ const router = createRouter({
             path: '/orders',
             name: 'Orders',
             component: AdminOrders
+        },
+        {
+            path: '/dashboard',
+            name: 'Dashboard',
+            component: Dashboard
         }
     ]
 })

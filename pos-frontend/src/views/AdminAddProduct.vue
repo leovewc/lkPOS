@@ -22,6 +22,7 @@ interface Product {
   manufacturer?: string;
   category?: string;
   note?: string;
+  costPrice: number;
 }
 
 const { toast } = useToast();
@@ -30,6 +31,7 @@ const productForm = ref({
   barcodes: [] as string[],
   name: '',
   price: 0,
+  costPrice: 0,
   imageUrl: '',
   brand: '',
   specification: '',
@@ -45,7 +47,7 @@ const searchQuery = ref('');
 
 const isEditDialogOpen = ref(false);
 const isSavingEdit = ref(false);
-const editForm = ref({ barcode: '', barcodes: [] as string[], name: '', price: 0 });
+const editForm = ref({ barcode: '', barcodes: [] as string[], name: '', price: 0, costPrice: 0 });
 
 // 🌟 新增：统计面板相关的状态
 const isStatsDialogOpen = ref(false);
@@ -111,6 +113,7 @@ const handleEnterBarcode = async () => {
         productForm.value.manufacturer = data.manufacturer || '';
         productForm.value.category = data.category || '';
         productForm.value.note = data.note || '';
+        productForm.value.costPrice = 0;
 
         toast({ title: "解析成功", description: `已自动解析: ${data.name}` });
       } else {
@@ -131,6 +134,14 @@ const handleSubmit = async () => {
   if (productForm.value.barcodes.length === 0 || !productForm.value.name) {
     return toast({ title: "表单不完整", description: "请至少录入一个条形码和商品名称", variant: "destructive" });
   }
+  // 🌟🌟🌟 新增的价格基本逻辑检查！
+  if (productForm.value.costPrice < 0 || productForm.value.price <= 0) {
+    return toast({ title: "价格异常", description: "零售价必须大于0，成本价不能为负数！", variant: "destructive" });
+  }
+  if (productForm.value.costPrice >= productForm.value.price) {
+    return toast({ title: "亏本警告拦截", description: "进货成本怎么能高于或等于零售价呢？老板你这是做慈善啊！", variant: "destructive" });
+  }
+
   isSubmitting.value = true;
   try {
     const response = await fetch('http://localhost:8080/api/products', {
@@ -141,7 +152,7 @@ const handleSubmit = async () => {
     if (response.ok) {
       toast({ title: "🎉 录入成功" });
       // 🌟 清空表单，迎接下一个商品
-      productForm.value = { barcodes: [], name: '', price: 0, imageUrl: '', brand: '', specification: '', manufacturer: '', category: '', note: '' };
+      productForm.value = { barcodes: [], name: '', price: 0,costPrice: 0, imageUrl: '', brand: '', specification: '', manufacturer: '', category: '', note: '' };
       fetchAllProducts();
     } else toast({ title: "录入失败", variant: "destructive" });
   } catch (error) {
@@ -177,6 +188,14 @@ const openEditDialog = (item: Product) => {
 const submitEdit = async () => {
   if (!editForm.value.name) return toast({ title: "名称不能为空", variant: "destructive" });
   isSavingEdit.value = true;
+  // 🌟🌟🌟 编辑时同样需要检查
+  if (editForm.value.costPrice < 0 || editForm.value.price <= 0) {
+    return toast({ title: "价格异常", variant: "destructive" });
+  }
+  if (editForm.value.costPrice >= editForm.value.price) {
+    return toast({ title: "亏本警告拦截", description: "成本价不能高于零售单价！", variant: "destructive" });
+  }
+
   try {
     const response = await fetch(`http://localhost:8080/api/products/${editForm.value.barcode}`, {
       method: 'PUT',
@@ -253,7 +272,16 @@ const openStatsDialog = async (item: Product) => {
           </div>
 
           <div class="space-y-2"><label class="text-sm font-semibold text-slate-700">商品名称 (各口味统称)</label><Input v-model="productForm.name" class="bg-slate-50" placeholder="例如: 农夫山泉 550ml" /></div>
-          <div class="space-y-2"><label class="text-sm font-semibold text-slate-700">统一零售单价 (￥)</label><Input v-model="productForm.price" type="number" step="0.01" class="font-mono text-lg bg-slate-50 text-blue-600 font-bold" /></div>
+          <div class="space-y-2">
+            <label class="text-sm font-semibold text-slate-700">进货成本价 (￥)</label>
+            <Input v-model="productForm.costPrice" type="number" step="1" class="font-mono text-lg bg-orange-50 text-orange-600 font-bold border-orange-200 focus-visible:ring-orange-500" placeholder="0.00" />
+            <p class="text-xs text-slate-400">系统将据此计算单品毛利</p>
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-sm font-semibold text-slate-700">统一零售单价 (￥)</label>
+            <Input v-model="productForm.price" type="number" step="1" class="font-mono text-lg bg-emerald-50 text-emerald-600 font-bold border-emerald-200 focus-visible:ring-emerald-500" />
+          </div>
         </CardContent>
         <CardFooter><Button class="w-full h-12 text-base font-bold bg-blue-600 hover:bg-blue-700" @click="handleSubmit" :disabled="isSubmitting">{{ isSubmitting ? '写入中...' : '确认保存全部信息' }}</Button></CardFooter>
       </Card>
@@ -328,7 +356,8 @@ const openStatsDialog = async (item: Product) => {
         <DialogHeader><DialogTitle>编辑商品信息</DialogTitle></DialogHeader>
         <div class="space-y-4 py-4">
           <div class="space-y-2"><label class="text-sm font-semibold text-slate-700">商品名称</label><Input v-model="editForm.name" /></div>
-          <div class="space-y-2"><label class="text-sm font-semibold text-slate-700">统一单价 (￥)</label><Input v-model="editForm.price" type="number" step="0.01" class="text-blue-600 font-bold" /></div>
+          <div class="space-y-2"><label class="text-sm font-semibold text-slate-700">成本价 (￥)</label><Input v-model="editForm.costPrice" type="number" step="1" class="text-orange-600 font-bold" /></div>
+          <div class="space-y-2"><label class="text-sm font-semibold text-slate-700">统一单价 (￥)</label><Input v-model="editForm.price" type="number" step="1" class="text-blue-600 font-bold" /></div>
         </div>
         <DialogFooter><Button variant="outline" @click="isEditDialogOpen = false">取消</Button><Button class="bg-blue-600 hover:bg-blue-700" @click="submitEdit">保存修改</Button></DialogFooter>
       </DialogContent>
@@ -410,7 +439,19 @@ const openStatsDialog = async (item: Product) => {
             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">包装规格</p>
             <p class="text-slate-800 font-medium">{{ currentDetailsProduct?.specification || '未知' }}</p>
           </div>
-          <div class="col-span-2">
+
+          <div class="bg-orange-50 p-3 rounded-lg border border-orange-100">
+            <p class="text-xs font-bold text-orange-400 uppercase tracking-wider mb-1">进货成本 (Cost)</p>
+            <p class="text-orange-600 font-black text-lg">￥{{ currentDetailsProduct?.costPrice?.toFixed(2) || '0.00' }}</p>
+          </div>
+          <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+            <p class="text-xs font-bold text-emerald-500 uppercase tracking-wider mb-1">单品毛利 (Profit)</p>
+            <p class="text-emerald-600 font-black text-lg">
+              ￥{{ ((currentDetailsProduct?.price || 0) - (currentDetailsProduct?.costPrice || 0)).toFixed(2) }}
+            </p>
+          </div>
+
+          <div class="col-span-2 mt-2">
             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">生产企业</p>
             <p class="text-slate-800 font-medium">{{ currentDetailsProduct?.manufacturer || '未知' }}</p>
           </div>
