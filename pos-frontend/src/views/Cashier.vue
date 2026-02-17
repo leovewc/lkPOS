@@ -19,6 +19,7 @@ interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  imageUrl?: string; //
 }
 
 const scannedBarcode = ref<string>('等待扫码...');
@@ -189,7 +190,7 @@ const handleCheckout = async () => {
         <Table>
           <TableHeader class="bg-slate-50/50">
             <TableRow>
-              <TableHead class="w-[40%]">商品信息</TableHead>
+              <TableHead class="w-16 text-center">图</TableHead> <TableHead class="w-[35%]">商品信息</TableHead>
               <TableHead class="w-[20%] text-center">数量</TableHead>
               <TableHead class="w-[15%]">单价</TableHead>
               <TableHead class="w-[15%]">小计</TableHead>
@@ -198,7 +199,7 @@ const handleCheckout = async () => {
           </TableHeader>
           <TableBody>
             <TableRow v-if="cart.length === 0">
-              <TableCell colspan="5" class="h-48 text-center text-slate-400">
+              <TableCell colspan="6" class="h-48 text-center text-slate-400">
                 <div class="flex flex-col items-center justify-center space-y-2">
                   <span class="text-4xl">🛒</span>
                   <p>购物车空空如也，等待扫码中...</p>
@@ -207,6 +208,16 @@ const handleCheckout = async () => {
             </TableRow>
 
             <TableRow v-for="item in cart" :key="item.barcode" class="group hover:bg-slate-50/80 transition-colors">
+
+              <TableCell>
+                <div v-if="item.imageUrl" class="h-12 w-12 rounded-md border border-slate-200 bg-white overflow-hidden flex items-center justify-center shadow-sm hover:scale-110 transition-transform cursor-pointer">
+                  <img :src="'http://localhost:8080' + item.imageUrl" class="object-contain h-full w-full" />
+                </div>
+                <div v-else class="h-12 w-12 rounded-md border border-slate-100 bg-slate-50 flex items-center justify-center text-[10px] text-slate-400 shadow-sm">
+                  无图
+                </div>
+              </TableCell>
+
               <TableCell>
                 <div class="font-bold text-slate-800 text-base">{{ item.name }}</div>
                 <div class="text-xs text-slate-400 font-mono mt-1">{{ item.barcode }}</div>

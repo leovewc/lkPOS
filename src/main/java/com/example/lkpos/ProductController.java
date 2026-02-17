@@ -6,6 +6,24 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+
+import org.springframework.http.*;
+import org.springframework.web.client.RestTemplate;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
+import java.net.URL;
+
+
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.http.MediaType;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/products")
@@ -99,32 +117,158 @@ public class ProductController {
         }
     }
 
+    // --- 🌟 新增：获取单个商品的历史销量和今日销量 ---
+    @GetMapping("/{id}/stats")
+    public Map<String, Object> getProductStats(@PathVariable Integer id) {
+        System.out.println("正在查询商品ID: " + id + " 的销售数据...");
+        Map<String, Object> stats = new HashMap<>();
+
+        // 分别查询总销量和今日销量
+        Integer totalSales = productMapper.getTotalSalesByProductId(id);
+        Integer todaySales = productMapper.getTodaySalesByProductId(id);
+
+        // 防空指针处理：如果没有卖出过，数据库的 SUM() 会返回 null
+        stats.put("totalSales", totalSales == null ? 0 : totalSales);
+        stats.put("todaySales", todaySales == null ? 0 : todaySales);
+
+        return stats;
+    }
+
+
+    // --- 🌟 1. 新增：调用第三方 API 并下载图片本地化 ---
+    @GetMapping("/fetch-external")
+    public Product fetchExternalProduct(@RequestParam String barcode) {
+        System.out.println("正在从 ShowAPI 云端拉取条码信息：" + barcode);
+        Product result = new Product();
+        result.barcode = barcode;
+
+        try {
+            // 1. 真实的 ShowAPI 接口地址
+            String apiUrl = "https://route.showapi.com/66-22";
+
+            // 2. 设置请求头为表单提交 (对应 curl 中的 -H 'content-type: application/x-www-form-urlencoded')
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+            // 3. 封装表单参数 (对应 curl 中的 -d 'code=...&appKey=...')
+            MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
+            map.add("appKey", "86C53ef713e848F8Ae0a8264f7E6D095"); // ⚠️ 务必填入你的 appKey
+            map.add("code", barcode);
+
+            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, headers);
+            RestTemplate restTemplate = new RestTemplate();
+
+            // 4. 发送 POST 请求并接收 String 格式的原始响应
+            ResponseEntity<String> response = restTemplate.postForEntity(apiUrl, request, String.class);
+            String rawData = response.getBody();
+
+            System.out.println("====== ShowAPI 原始返回数据 ======");
+            System.out.println(rawData);
+            System.out.println("=================================");
+
+            // 5. 手动解析 JSON
+            ObjectMapper mapper = new ObjectMapper();
+            Map<String, Object> body = mapper.readValue(rawData, Map.class);
+
+            // 6. 按照你截图里的格式精准解析
+            if (body != null && "0".equals(String.valueOf(body.get("showapi_res_code")))) {
+                Map<String, Object> data = (Map<String, Object>) body.get("showapi_res_body");
+
+                if (data != null && data.get("goodsName") != null) {
+                    // 解析名称
+                    result.name = String.valueOf(data.get("goodsName"));
+
+                    // 解析价格（防空字符串报错）
+                    String priceStr = String.valueOf(data.get("price"));
+                    if (priceStr != null && !priceStr.trim().isEmpty() && !"null".equals(priceStr)) {
+                        try { result.price = Double.parseDouble(priceStr); }
+                        catch (NumberFormatException e) { result.price = 0.0; }
+                    } else { result.price = 0.0; }
+
+                    // 解析图片并下载到本地
+                    String netImageUrl = (String) data.get("img");
+                    if (netImageUrl != null && !netImageUrl.trim().isEmpty()) {
+                        String fileName = UUID.randomUUID().toString() + ".jpg";
+                        Path localPath = Paths.get(System.getProperty("user.dir") + "/uploads/" + fileName);
+                        try (InputStream in = new URL(netImageUrl).openStream()) {
+                            Files.copy(in, localPath, StandardCopyOption.REPLACE_EXISTING);
+                            result.imageUrl = "/uploads/" + fileName;
+                            System.out.println("✅ 图片下载成功，本地路径：" + result.imageUrl);
+                        } catch (Exception e) { System.err.println("❌ 图片下载失败: " + e.getMessage()); }
+                    }
+
+                    // 🌟 新增：精准抓取高价值商业数据！
+                    result.brand = data.get("trademark") != null ? data.get("trademark").toString() : "未知品牌";
+                    result.specification = data.get("spec") != null ? data.get("spec").toString() : "无规格";
+                    result.manufacturer = data.get("manuName") != null ? data.get("manuName").toString() : "未知厂家";
+                    result.category = data.get("gpcType") != null ? data.get("gpcType").toString() : "未分类";
+                    result.note = data.get("note") != null ? data.get("note").toString() : "暂无详细说明";
+
+                }
+            } else {
+                System.out.println("⚠️ API 返回错误：" + body.get("showapi_res_error"));
+            }
+        } catch (Exception e) {
+            System.err.println("❌ 调用 ShowAPI 发生异常: " + e.getMessage());
+        }
+        return result;
+    }
+
+    // --- 🌟 2. 实体类补充 ---
+    public static class Product {
+        public Integer id;
+        public String name;
+        public double price;
+        public List<String> barcodes;
+        public String barcode;
+        public String imageUrl;
+
+        // 🌟 新增的五个高价值商业字段
+        public String brand;
+        public String specification;
+        public String manufacturer;
+        public String category;
+        public String note;
+
+        public Product() {}
+    }
+
+
     // --- MyBatis 数据访问层 ---
     @Mapper
     public interface ProductMapper {
 
-        // 🌟 连表查询 (JOIN)：根据子表条码，查主表商品
-        @Select("SELECT p.id, p.name, p.price FROM products p JOIN product_barcodes pb ON p.id = pb.product_id WHERE pb.barcode = #{barcode}")
+        // 1. 根据条码查询商品信息 (包含图片)
+        @Select("SELECT p.id, p.name, p.price, p.image_url as imageUrl FROM products p JOIN product_barcodes pb ON p.id = pb.product_id WHERE pb.barcode = #{barcode}")
         Product findByBarcode(String barcode);
 
         @Select("SELECT product_id FROM product_barcodes WHERE barcode = #{barcode} LIMIT 1")
         Integer findProductIdByBarcode(String barcode);
 
-        // 插入主表，并配置 @Options 自动将 MySQL 生成的自增 ID 塞回到传入对象的 id 属性中
-        @Insert("INSERT INTO products (name, price) VALUES (#{name}, #{price})")
+        // 2. 插入商品主表 (包含图片)
+        // 🌟 升级：插入商品时带上新字段
+        @Insert("INSERT INTO products (name, price, image_url, brand, specification, manufacturer, category, note) " +
+                "VALUES (#{name}, #{price}, #{imageUrl}, #{brand}, #{specification}, #{manufacturer}, #{category}, #{note})")
         @Options(useGeneratedKeys = true, keyProperty = "id")
         void insertProduct(Product product);
 
-        // 插入子表
+        // 3. 插入条码子表
         @Insert("INSERT INTO product_barcodes (barcode, product_id) VALUES (#{barcode}, #{productId})")
         void insertBarcode(@Param("barcode") String barcode, @Param("productId") Integer productId);
 
-        // 🌟 一对多嵌套查询：查主表的同时，自动调用 findBarcodesByProductId 查子表，并将结果注入 barcodes 集合
-        @Select("SELECT * FROM products ORDER BY id DESC")
+        // 4. 查询商品列表 (映射图片和条码集合)
+        // 🌟 升级：查询列表时把新字段一起拉出来
+        @Select("SELECT id, name, price, image_url as imageUrl, brand, specification, manufacturer, category, note FROM products ORDER BY id DESC")
         @Results({
                 @Result(property = "id", column = "id"),
                 @Result(property = "name", column = "name"),
                 @Result(property = "price", column = "price"),
+                @Result(property = "imageUrl", column = "imageUrl"),
+                @Result(property = "brand", column = "brand"),
+                @Result(property = "specification", column = "specification"),
+                @Result(property = "manufacturer", column = "manufacturer"),
+                @Result(property = "category", column = "category"),
+                @Result(property = "note", column = "note"),
                 @Result(property = "barcodes", column = "id", many = @Many(select = "findBarcodesByProductId"))
         })
         List<Product> findAll();
@@ -137,20 +281,13 @@ public class ProductController {
 
         @Update("UPDATE products SET name = #{name}, price = #{price} WHERE id = #{id}")
         void updateProduct(Product product);
-    }
 
-    // --- 实体类 ---
-    public static class Product {
-        public Integer id;
-        public String name;
-        public double price;
+        // 5. 销量统计报表
+        @Select("SELECT SUM(oi.quantity) FROM order_items oi JOIN product_barcodes pb ON oi.barcode = pb.barcode WHERE pb.product_id = #{productId}")
+        Integer getTotalSalesByProductId(Integer productId);
 
-        // 🌟 商业版核心：一个商品对应多个物理条码的集合
-        public List<String> barcodes;
+        @Select("SELECT SUM(oi.quantity) FROM order_items oi JOIN product_barcodes pb ON oi.barcode = pb.barcode JOIN orders o ON oi.order_id = o.id WHERE pb.product_id = #{productId} AND DATE(o.create_time) = CURDATE()")
+        Integer getTodaySalesByProductId(Integer productId);
 
-        // 🌟 兼容字段：用于和旧版前端做无缝衔接
-        public String barcode;
-
-        public Product() {}
     }
 }
