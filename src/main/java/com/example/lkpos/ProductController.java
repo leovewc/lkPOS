@@ -25,6 +25,8 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.ObjectMapper;
 
+import org.springframework.web.multipart.MultipartFile;
+
 @RestController
 @RequestMapping("/api/products")
 public class ProductController {
@@ -66,6 +68,31 @@ public class ProductController {
         } catch (Exception e) {
             System.err.println("入库失败：" + e.getMessage());
             return "error";
+        }
+    }
+
+    // --- 🌟 新增：独立接收前端实物拍照上传的接口 ---
+    @PostMapping("/upload")
+    public String uploadImage(@RequestParam("file") MultipartFile file) {
+        try {
+            // 生成随机文件名
+            String fileName = UUID.randomUUID().toString() + ".jpg";
+            // 拼接本地保存路径
+            Path localPath = Paths.get(System.getProperty("user.dir") + "/uploads/" + fileName);
+
+            // 确保 uploads 文件夹存在，如果不存在则自动创建
+            if (!Files.exists(localPath.getParent())) {
+                Files.createDirectories(localPath.getParent());
+            }
+
+            // 将前端传来的文件流保存到硬盘
+            file.transferTo(localPath.toFile());
+
+            // 返回相对路径给前端
+            return "/uploads/" + fileName;
+        } catch (Exception e) {
+            System.err.println("❌ 图片上传失败: " + e.getMessage());
+            return "";
         }
     }
 
